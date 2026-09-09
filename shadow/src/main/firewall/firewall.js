@@ -69,9 +69,19 @@ function decideRequest(req, config = {}) {
     return { action: 'block', reason: 'scheme', category: 'protocol',
       detail: `Shadow does not allow the "${req.scheme}:" protocol. External handlers are a common way to launch local programs from a web page.` };
   }
-  if (req.scheme === 'file' && req.resourceType !== 'mainFrame') {
-    return { action: 'block', reason: 'file-subresource', category: 'protocol',
-      detail: 'A web page tried to read a local file.' };
+  if (req.scheme === 'file') {
+    // Subresources never, and top-level only when it did not come from a web
+    // page. Shadow's own interstitial and home pages are file:// URLs that
+    // expose a small IPC bridge, so a page that can navigate to file:// can
+    // reach that bridge.
+    if (req.resourceType !== 'mainFrame') {
+      return { action: 'block', reason: 'file-subresource', category: 'protocol',
+        detail: 'A web page tried to read a local file.' };
+    }
+    if (req.initiatorHost) {
+      return { action: 'block', reason: 'file-navigation', category: 'protocol',
+        detail: `A page on ${req.initiatorHost} tried to send this tab to a local file.` };
+    }
   }
 
   // 3. Ports. Cross-protocol attacks use the browser to speak SMTP, Redis, SSH.
@@ -87,7 +97,15 @@ function decideRequest(req, config = {}) {
     if (local && local.private) {
       const initiatorLocal = req.initiatorHost ? classifyHost(req.initiatorHost) : null;
       const initiatorIsLocal = Boolean(initiatorLocal && initiatorLocal.private);
-      const userTyped = req.resourceType === 'mainFrame' && !req.initiatorHost;
+
+      // "Main frame with no referrer" is NOT proof the person typed it: any
+      // page can produce exactly that with rel="noreferrer" or a stripped
+      // Referrer-Policy, which would hand it the whole local network. Only a
+      // navigation the main process saw come from the address bar counts.
+      const userTyped = req.resourceType === 'mainFrame'
+        && typeof config.wasUserNavigation === 'function'
+        && config.wasUserNavigation(req.url);
+
       if (local.metadata) {
         return { action: 'block', reason: 'metadata', category: 'ssrf',
           detail: 'This is a cloud metadata endpoint. Reaching it from a web page is how cloud credentials get stolen.' };
@@ -217,6 +235,34 @@ class Firewall {
     this.rules = [];
     this.stats = { seen: 0, blocked: 0, upgraded: 0, byCategory: {} };
     this.recentBlocks = [];
+    /**
+     * URLs the person typed into the address bar, with an expiry. This is the
+     * only evidence the firewall accepts that a navigation to a private
+     * address was deliberate. Short-lived on purpose: it authorises one
+     * navigation, not a standing exemption.
+     */
+    this.userNavigations = new Map();
+    this.userNavigationTtlMs = 15000;
+  }
+
+  /** Called by the main process when a navigation comes from the address bar. */
+  noteUserNavigation(url) {
+    const now = Date.now();
+    for (const [key, at] of this.userNavigations) {
+      if (now - at > this.userNavigationTtlMs) this.userNavigations.delete(key);
+    }
+    if (this.userNavigations.size > 50) this.userNavigations.clear();
+    this.userNavigations.set(String(url), now);
+  }
+
+  wasUserNavigation(url) {
+    const at = this.userNavigations.get(String(url));
+    if (at === undefined) return false;
+    if (Date.now() - at > this.userNavigationTtlMs) {
+      this.userNavigations.delete(String(url));
+      return false;
+    }
+    return true;
   }
 
   setRules(rules) { this.rules = Array.isArray(rules) ? rules : []; }
@@ -239,6 +285,7 @@ class Firewall {
       settings: this.settings,
       blocklists: this.blocklists,
       rules: this.rules,
+      wasUserNavigation: (url) => this.wasUserNavigation(url),
     });
 
     if (decision.action === 'block') {

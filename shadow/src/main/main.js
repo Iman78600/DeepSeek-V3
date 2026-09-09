@@ -10,7 +10,7 @@
  *   5. window + tabs
  */
 
-const { app, BrowserWindow, WebContentsView, session, ipcMain, shell, dialog, Menu } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, ipcMain, shell, dialog, Menu, net } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -26,10 +26,12 @@ const { Detonator } = require('./sandbox/detonate');
 const { TorManager } = require('./tor');
 const { hardenSession, webPreferences, commandLineSwitches } = require('./hardening/profile');
 const { shieldSource } = require('./hardening/fingerprint-shield');
+const { isNavigable, assertNavigable } = require('./hardening/url-policy');
 const { registerIpc } = require('./ipc');
 
 const SHADOW_HOME = path.join(os.homedir(), '.shadow');
 const CHROME_HEIGHT = 88;   // height of the browser toolbar in CSS pixels
+const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 
 // ---------------------------------------------------------------------------
 // Core services
@@ -59,8 +61,23 @@ for (const [name, value] of commandLineSwitches(settings)) {
   if (value === null) app.commandLine.appendSwitch(name);
   else app.commandLine.appendSwitch(name, value);
 }
-// Shadow renders untrusted content. Keep the strongest process isolation on.
-app.enableSandbox();
+// Shadow renders untrusted content, so the OS-level renderer sandbox stays on.
+//
+// The one exception is an explicit --no-sandbox on the command line. Some
+// environments cannot provide the sandbox at all (a container running as root,
+// a kernel with user namespaces disabled). Calling enableSandbox() anyway wins
+// over the flag, and the result is not a safer browser: it is an unbootable
+// one that crash-loops its child processes with an error most people will not
+// recognise. Honour the flag, and say plainly what was given up.
+const SANDBOX_DISABLED = process.argv.includes('--no-sandbox');
+if (SANDBOX_DISABLED) {
+  console.warn(
+    '\n  Shadow is running WITHOUT the operating system renderer sandbox.\n'
+    + '  A bug in a web page can then reach the rest of this machine.\n'
+    + '  Use this only for testing, never for real browsing.\n');
+} else {
+  app.enableSandbox();
+}
 
 // ---------------------------------------------------------------------------
 // Tab management
@@ -185,18 +202,43 @@ function createTab(url = settings.get('privacy.homepage') || 'shadow://home') {
   installFingerprintShield(wc, id);
 
   // --- Navigation gate: the analyst runs before the page is fetched --------
-  wc.on('will-navigate', async (event, targetUrl) => {
+  //
+  // Both events are needed. 'will-navigate' covers the address the user or the
+  // page asked for; 'will-redirect' covers where the server actually sent
+  // them. Checking only the first lets any safe-looking link redirect straight
+  // into a phishing page without ever being scored.
+  const gateNavigation = async (event, targetUrl, trigger) => {
+    if (isInternal(targetUrl)) return;
+
+    // A scheme a tab may not load is refused outright, whatever the analyst
+    // would have said about it.
+    if (!isNavigable(targetUrl, { rendererDir: RENDERER_DIR })) {
+      event.preventDefault();
+      events.record({ type: 'navigation-refused', tabId: id, url: targetUrl, trigger, reason: 'scheme' });
+      return;
+    }
+
     if (!settings.get('soc.enabled')) return;
-    if (targetUrl.startsWith('file://') && targetUrl.includes('interstitial.html')) return;
     if (analyzer.hasOverride(targetUrl)) return;
 
-    const verdict = await analyzer.inspectUrl(targetUrl, { tabId: id, trigger: 'will-navigate' });
+    const verdict = await analyzer.inspectUrl(targetUrl, { tabId: id, trigger });
     tab.verdict = verdict;
     if (verdict.verdict === 'block' && settings.get('soc.blockOnUrlVerdict')) {
       event.preventDefault();
       wc.loadURL(interstitial('block', verdict, targetUrl));
     }
     broadcastTabs();
+  };
+
+  wc.on('will-navigate', (event, targetUrl) => gateNavigation(event, targetUrl, 'will-navigate'));
+  wc.on('will-redirect', (event, targetUrl) => gateNavigation(event, targetUrl, 'will-redirect'));
+
+  // Frames get the same treatment. A blocked top-level page is no help if the
+  // same content loads in an iframe.
+  wc.on('did-frame-navigate', (_e, frameUrl, httpCode, _s, isMainFrame) => {
+    if (isMainFrame || !settings.get('soc.enabled')) return;
+    analyzer.inspectUrl(frameUrl, { tabId: id, trigger: 'subframe' }).catch(() => {});
+    void httpCode;
   });
 
   wc.on('did-start-loading', () => { tab.loading = true; tab.alerts = []; tab.blockedCount = 0; broadcastTabs(); });
@@ -228,6 +270,12 @@ function createTab(url = settings.get('privacy.homepage') || 'shadow://home') {
   // --- New windows: no popups, open in a tab, analysed like anything else ---
   wc.setWindowOpenHandler(({ url: target, disposition }) => {
     if (disposition === 'save-to-disk') return { action: 'deny' };
+    // window.open is page-controlled, so the page does not get to pick the
+    // scheme either. Without this, window.open('file:///...') reaches the disk.
+    if (!isNavigable(target, { rendererDir: RENDERER_DIR })) {
+      events.record({ type: 'popup-refused', tabId: id, url: target, reason: 'scheme' });
+      return { action: 'deny' };
+    }
     createTab(target);
     return { action: 'deny' };
   });
@@ -245,11 +293,28 @@ function createTab(url = settings.get('privacy.homepage') || 'shadow://home') {
     broadcastTabs();
   });
 
-  wc.loadURL(url.startsWith('shadow://') ? homePageUrl() : url);
+  if (url.startsWith('shadow://')) {
+    wc.loadURL(homePageUrl());
+  } else {
+    // Last line of defence: no caller gets to load a scheme that is not
+    // allowed, however it reached here.
+    try {
+      wc.loadURL(assertNavigable(url, { rendererDir: RENDERER_DIR }));
+    } catch (err) {
+      events.record({ type: 'navigation-refused', tabId: id, url, reason: err.message });
+      wc.loadURL(homePageUrl());
+    }
+  }
   activeTabId = id;
   layoutTabs();
   broadcastTabs();
   return tab;
+}
+
+/** Shadow's own bundled pages, which are exempt from the navigation gate. */
+function isInternal(targetUrl) {
+  const { isInternalPage } = require('./hardening/url-policy');
+  return isInternalPage(targetUrl, RENDERER_DIR);
 }
 
 function homePageUrl() {
@@ -337,11 +402,13 @@ function createWindow() {
     backgroundColor: '#0d0f14',
     title: 'Shadow',
     autoHideMenuBar: true,
+    // No preload and no page here on purpose. The chrome UI lives in the
+    // WebContentsView below, so the window itself never renders content and
+    // does not need a privileged bridge of its own.
     webPreferences: {
-      preload: path.join(__dirname, '..', 'preload', 'browser-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,   // the chrome UI needs the preload bridge
+      sandbox: true,
     },
   });
 
@@ -350,8 +417,22 @@ function createWindow() {
       preload: path.join(__dirname, '..', 'preload', 'browser-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+      // The chrome UI is local and must never be navigated anywhere else.
+      navigateOnDragDrop: false,
     },
   });
+
+  // The UI is not a browser tab. Anything that tries to navigate it away from
+  // index.html, or open a window from it, is refused.
+  chrome.webContents.on('will-navigate', (event, target) => {
+    if (!isInternal(target)) {
+      event.preventDefault();
+      events.record({ type: 'chrome-navigation-refused', url: target });
+    }
+  });
+  chrome.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.contentView.addChildView(chrome);
   chrome.webContents.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
@@ -378,6 +459,44 @@ function createWindow() {
 app.whenReady().then(async () => {
   const webSession = session.fromPartition('persist:shadow-web');
 
+  // --- file:// is confined to Shadow's own pages --------------------------
+  //
+  // The navigation gate catches a page that tries to reach the disk, but it is
+  // not the whole story: Chromium's webRequest API never fires for the file
+  // scheme, so the firewall cannot see file:// at all, and any code path that
+  // reaches loadURL() without passing through will-navigate would still load
+  // it. Enforcing it on the protocol itself covers every path at once.
+  //
+  // Shadow's own interstitial and home pages are file:// URLs that expose a
+  // small IPC bridge, so "can load a local file" and "can reach that bridge"
+  // are the same capability.
+  webSession.protocol.handle('file', async (request) => {
+    let filePath;
+    try {
+      const u = new URL(request.url);
+      filePath = decodeURIComponent(u.pathname);
+      if (process.platform === 'win32' && /^\/[a-z]:/i.test(filePath)) filePath = filePath.slice(1);
+    } catch {
+      return new Response('bad request', { status: 400 });
+    }
+
+    const resolved = path.resolve(filePath);
+    const inside = resolved === RENDERER_DIR || resolved.startsWith(RENDERER_DIR + path.sep);
+    if (!inside) {
+      events.record({
+        type: 'file-access-blocked',
+        severity: 'high',
+        path: resolved.slice(0, 300),
+        detail: 'Something tried to load a local file that is not part of Shadow.',
+      });
+      return new Response(
+        'Shadow does not load local files.',
+        { status: 403, headers: { 'content-type': 'text/plain' } });
+    }
+    return net.fetch(`file://${resolved}`, { bypassCustomProtocolHandlers: true });
+  });
+
+
   hardenSession(webSession, { settings, events });
   if (settings.get('firewall.enabled')) firewall.attach(webSession);
   wireDownloads(webSession);
@@ -399,27 +518,48 @@ app.whenReady().then(async () => {
   // Deep page analysis, driven by the site preload's observations.
   ipcMain.on('shadow:page-observed', (event, observation) => {
     if (!settings.get('soc.deepPageScan')) return;
+    if (!observation || typeof observation !== 'object') return;
     const tab = [...tabs.values()].find((t) => t.view.webContents.id === event.sender.id);
     if (!tab) return;
 
+    // Use the URL the browser knows the tab is on, never the one the page
+    // reported. A compromised renderer could otherwise claim to be on a
+    // trusted site and have its content scored against that origin, or turn
+    // its own risk badge green.
+    const realUrl = tab.view.webContents.getURL();
+    const html = typeof observation.html === 'string'
+      ? observation.html.slice(0, 2_000_000)
+      : '';
+
     const verdict = analyzer.inspectPage({
-      url: observation.url,
-      html: observation.html,
+      url: realUrl,
+      html,
       observations: observation,
     });
     tab.verdict = verdict;
 
-    if (verdict.verdict === 'block' && !analyzer.hasOverride(observation.url)) {
-      tab.view.webContents.loadURL(interstitial('block', verdict, observation.url));
+    if (verdict.verdict === 'block' && !analyzer.hasOverride(realUrl)) {
+      tab.view.webContents.loadURL(interstitial('block', verdict, realUrl));
     }
     broadcastTabs();
   });
 
+  const ALERT_SEVERITIES = new Set(['info', 'low', 'medium', 'high', 'critical']);
   ipcMain.on('shadow:page-alert', (event, alert) => {
     const tab = [...tabs.values()].find((t) => t.view.webContents.id === event.sender.id);
-    if (!tab) return;
-    tab.alerts.push(alert);
-    events.record({ type: 'page-alert', tabId: tab.id, url: tab.url, ...alert });
+    if (!tab || !alert || typeof alert !== 'object') return;
+    // Anything crossing this boundary comes from a renderer, so it is
+    // normalised into a fixed shape before it can reach the UI or the log.
+    // The cap stops a compromised page from burying real findings under noise.
+    if (tab.alerts.length >= 20) return;
+    const safe = {
+      id: String(alert.id || 'page-alert').slice(0, 64).replace(/[^a-z0-9_-]/gi, ''),
+      severity: ALERT_SEVERITIES.has(alert.severity) ? alert.severity : 'medium',
+      title: String(alert.title || 'The page did something unusual').slice(0, 200),
+      detail: String(alert.detail || '').slice(0, 500),
+    };
+    tab.alerts.push(safe);
+    events.record({ type: 'page-alert', tabId: tab.id, url: tab.view.webContents.getURL(), ...safe });
     broadcastTabs();
   });
 
@@ -436,6 +576,7 @@ app.whenReady().then(async () => {
     ipcMain, app, dialog, shell, win: () => win,
     settings, events, blocklists, firewall, analyzer, quarantine, tor, detonator,
     tabs, createTab, closeTab, layoutTabs, broadcastTabs,
+    rendererDir: RENDERER_DIR,
     setActiveTab: (id) => { if (tabs.has(id)) { activeTabId = id; layoutTabs(); broadcastTabs(); } },
     getActiveTab: () => tabs.get(activeTabId),
     webSession,
@@ -445,7 +586,20 @@ app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   createWindow();
 
-  events.record({ type: 'startup', preset: settings.get('profile.preset'), tor: settings.get('tor.enabled') });
+  events.record({
+    type: 'startup',
+    preset: settings.get('profile.preset'),
+    tor: settings.get('tor.enabled'),
+    osSandbox: !SANDBOX_DISABLED,
+  });
+  if (SANDBOX_DISABLED) {
+    events.record({
+      type: 'protection-disabled',
+      severity: 'critical',
+      what: 'os-sandbox',
+      detail: 'Shadow was started with --no-sandbox. Renderer processes are not isolated by the operating system.',
+    });
+  }
 });
 
 app.on('window-all-closed', async () => {

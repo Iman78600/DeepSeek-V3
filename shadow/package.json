@@ -13,10 +13,12 @@
     "start": "electron .",
     "scan": "node tools/scan-cli.js",
     "test": "node --test test/*.test.js",
-    "update-lists": "node tools/update-blocklists.js"
+    "update-lists": "node tools/update-blocklists.js",
+    "test:functional": "xvfb-run -a electron tools/functional-test.js",
+    "boot-probe": "electron tools/boot-probe.js"
   },
   "devDependencies": {
-    "electron": "^32.0.0"
+    "electron": "^44.3.0"
   },
   "dependencies": {}
 }

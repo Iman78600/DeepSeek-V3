@@ -66,8 +66,18 @@ function hardenSession(session, { settings, events } = {}) {
 
   // --- Permissions --------------------------------------------------------
   session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    // Use the URL of the frame that actually asked, not the top-level page.
+    // An iframe from anywhere can request a permission, and judging it by the
+    // address in the address bar would let a third-party frame inherit the
+    // trust the user extended to the site they think they are on. This has
+    // been a real Electron bug more than once, so Shadow does not rely on the
+    // framework getting it right.
     const origin = (() => {
-      try { return new URL(webContents.getURL()).origin; } catch { return 'unknown'; }
+      const requesting = details && (details.requestingUrl || details.securityOrigin);
+      for (const candidate of [requesting, webContents.getURL()]) {
+        try { if (candidate) return new URL(candidate).origin; } catch { /* try the next */ }
+      }
+      return 'unknown';
     })();
     const decision = decidePermission(permission, origin, settings);
     if (events) {
@@ -85,9 +95,10 @@ function hardenSession(session, { settings, events } = {}) {
   });
 
   // Synchronous checks (used for things like clipboard read).
-  session.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
-    const decision = decidePermission(permission, requestingOrigin, settings);
-    return decision.allow;
+  session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    // Same rule: the requesting origin wins over the top-level document.
+    const origin = (details && details.securityOrigin) || requestingOrigin;
+    return decidePermission(permission, origin, settings).allow;
   });
 
   // --- Device access ------------------------------------------------------
@@ -121,9 +132,19 @@ function hardenSession(session, { settings, events } = {}) {
   // --- Certificate errors are never click-through by accident --------------
   // (main.js attaches the analyst-backed handler; this is the safe default.)
   session.setCertificateVerifyProc((request, callback) => {
-    // 0 = use Chromium's own result. Shadow never overrides a failure to
-    // "trust anyway"; it surfaces the failure to the analyst instead.
-    callback(0);
+    // -3 means "use Chromium's own verification result". It is the only safe
+    // value here.
+    //
+    // Do NOT change this to 0. In Electron, callback(0) means "success": it
+    // tells Chromium the certificate is trusted AND disables Certificate
+    // Transparency checking. Returning 0 unconditionally, which is an easy
+    // mistake to make because 0 reads like "no error", silently accepts
+    // expired, self-signed, revoked and wrong-hostname certificates and turns
+    // every HTTPS connection into one an attacker on the network can read.
+    //
+    // Shadow never overrides a certificate failure. Failures are surfaced to
+    // the analyst by the certificate-error handler in main.js instead.
+    callback(-3);
     void request;
   });
 

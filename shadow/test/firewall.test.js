@@ -3,6 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 
 const { decideRequest, parseRequest, hardenRequestHeaders } = require('../src/main/firewall/firewall');
+const { Firewall } = require('../src/main/firewall/firewall');
 const { Blocklists, normalizeLine } = require('../src/main/firewall/blocklists');
 const { classifyHost, classifyIp, evaluate, BLOCKED_PORTS } = require('../src/main/firewall/rules');
 
@@ -45,9 +46,40 @@ test('a local page may still reach the local network', () => {
   assert.equal(d.action, 'allow');
 });
 
-test('typing a LAN address yourself is allowed', () => {
-  const d = ask({ url: 'http://192.168.1.1/', resourceType: 'mainFrame' });
-  assert.equal(d.action, 'allow');
+test('a LAN address is only allowed when the person actually typed it', () => {
+  // A missing referrer is not evidence: any page can strip it with
+  // rel="noreferrer", so on its own it must not open up the local network.
+  const forged = ask({ url: 'http://192.168.1.1/', resourceType: 'mainFrame' });
+  assert.equal(forged.action, 'block');
+  assert.equal(forged.reason, 'private-network');
+
+  // The main process records address-bar navigations, and only those count.
+  const typed = decideRequest(
+    parseRequest({ url: 'http://192.168.1.1/', resourceType: 'mainFrame' }),
+    { settings: settings(), blocklists, rules: [], wasUserNavigation: (u) => u === 'http://192.168.1.1/' });
+  assert.equal(typed.action, 'allow');
+});
+
+test('the user-navigation record expires and does not authorise other URLs', () => {
+  const fw = new Firewall({ settings: settings(), blocklists });
+  fw.noteUserNavigation('http://192.168.1.1/');
+  assert.equal(fw.wasUserNavigation('http://192.168.1.1/'), true);
+  assert.equal(fw.wasUserNavigation('http://192.168.1.2/'), false, 'must not authorise a different host');
+
+  fw.userNavigationTtlMs = -1; // force expiry
+  assert.equal(fw.wasUserNavigation('http://192.168.1.1/'), false, 'must not be a standing exemption');
+});
+
+test('a web page cannot send a tab to a local file', () => {
+  // Shadow's own pages are file:// URLs that expose an IPC bridge, so a page
+  // that can navigate to file:// can reach it.
+  const d = ask({ url: 'file:///home/u/.ssh/id_rsa', resourceType: 'mainFrame', referrer: 'https://evil.tk/' });
+  assert.equal(d.action, 'block');
+  assert.equal(d.reason, 'file-navigation');
+
+  const sub = ask({ url: 'file:///etc/passwd', resourceType: 'xhr', referrer: 'https://evil.tk/' });
+  assert.equal(sub.action, 'block');
+  assert.equal(sub.reason, 'file-subresource');
 });
 
 test('non-web ports are refused', () => {

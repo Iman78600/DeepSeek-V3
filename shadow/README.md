@@ -82,10 +82,17 @@ npm start
 Optional extras:
 
 ```bash
-npm run update-lists   # download the real blocklists (millions of domains)
-npm test               # 81 tests covering every detection module
-sudo apt install tor   # only if you want the Tor button to work
+npm run update-lists     # download the real blocklists (millions of domains)
+npm test                 # 117 unit tests covering every detection module
+npm run test:functional  # boots the real browser and drives it (Linux, needs xvfb)
+sudo apt install tor     # only if you want the Tor button to work
 ```
+
+The functional test is the interesting one. It starts the actual application,
+serves a phishing page and a tracker-laden page from a local server, drives a
+real tab at them, and checks that the analyst blocks, the firewall drops, the
+fingerprint shield is live in the page's own JavaScript world, and a tab cannot
+be made to render `/etc/passwd`. Sixteen checks, all passing.
 
 ---
 
@@ -234,14 +241,19 @@ shadow/
     hardening/
       profile.js             session hardening, web preferences, switches
       permissions.js         permission policy (deny by default)
-    storage/store.js         settings with a schema that cannot be weakened
+      url-policy.js          the one place that decides if a URL may be loaded
+      safe-paths.js          where a download may be released to
+      fingerprint-shield.js  main-world anti-fingerprinting source
+    storage/
+      store.js               settings with a schema that cannot be weakened
+      setting-validators.js  content checks for settings that spawn or proxy
   src/preload/
     site-preload.js          fingerprint resistance + page telemetry
     browser-preload.js       the UI bridge
   src/renderer/              browser chrome, SOC dashboard, block page
   config/                    default settings, presets, blocklists
-  tools/                     CLI scanner, blocklist updater
-  test/                      81 tests
+  tools/                     CLI scanner, blocklist updater, functional test
+  test/                      117 unit tests, including security regressions
 ```
 
 Every security module is plain Node with no Electron import, which is why the
@@ -261,6 +273,19 @@ the CLI. Do that in a virtual machine, not on your daily driver.
 
 ---
 
+## Shadow has been audited too
+
+A browser that inspects other people's code has to survive inspection of its
+own. **[SECURITY-AUDIT.md](SECURITY-AUDIT.md)** documents a review of Shadow's
+first version: nine issues found and fixed, including one that disabled TLS
+verification entirely, one that allowed arbitrary code execution through a
+setting, and one found only by running the real browser rather than by reading
+it. Every fix has a regression test.
+
+The dependency situation matters as much as the code. Shadow tracks a current
+Electron, because an outdated Chromium means publicly documented exploits work.
+`npm audit` reports zero vulnerabilities.
+
 ## What Shadow deliberately does not do
 
 - **It never overrides a certificate failure.** There is no "proceed anyway"
@@ -272,6 +297,9 @@ the CLI. Do that in a virtual machine, not on your daily driver.
   custom protocol handlers, no `webview` tags.
 - **It never uploads anything.** No cloud reputation service is contacted
   unless you turn one on and supply your own key.
+- **It never pretends a protection is on when it is off.** Starting with
+  `--no-sandbox` prints a warning and records `protection-disabled` in the SOC
+  log, rather than quietly continuing.
 
 ## Licence
 

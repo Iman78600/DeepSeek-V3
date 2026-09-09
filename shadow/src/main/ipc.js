@@ -9,6 +9,9 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+const { assertNavigable, assertSafeExternal, isNavigable } = require('./hardening/url-policy');
+const { checkReleaseDir } = require('./hardening/safe-paths');
+
 function registerIpc(ctx) {
   const {
     ipcMain, app, dialog, shell, win,
@@ -23,7 +26,11 @@ function registerIpc(ctx) {
 
   // --- Tabs ---------------------------------------------------------------
   handle('tab:new', (url) => {
-    const tab = createTab(typeof url === 'string' && url ? url : undefined);
+    // A renderer asking for a new tab does not get to choose the scheme.
+    const target = typeof url === 'string' && url
+      ? assertNavigable(url, { rendererDir: ctx.rendererDir })
+      : undefined;
+    const tab = createTab(target);
     return tab.id;
   });
   handle('tab:close', (id) => { closeTab(Number(id)); return true; });
@@ -34,6 +41,13 @@ function registerIpc(ctx) {
     if (!tab) throw new Error('no active tab');
     const target = normalizeAddress(String(raw || ''), settings);
     if (target === 'shadow://home') { tab.view.webContents.loadURL(homePageUrl()); return target; }
+    assertNavigable(target, { rendererDir: ctx.rendererDir });
+    // Typing an address is the one place a person can legitimately reach their
+    // own network, so record it. The firewall consults this instead of
+    // guessing from a missing referrer, which a page can forge.
+    if (ctx.firewall && typeof ctx.firewall.noteUserNavigation === 'function') {
+      ctx.firewall.noteUserNavigation(target);
+    }
     await tab.view.webContents.loadURL(target);
     return target;
   });
@@ -50,22 +64,34 @@ function registerIpc(ctx) {
     return t && t.verdict ? t.verdict : null;
   });
   handle('soc:proceed', (url) => {
-    analyzer.override(String(url));
-    events.record({ type: 'user-override', url: String(url) });
+    // The block page passes back the URL it was warning about. It arrives from
+    // a renderer, so it is checked like any other navigation before it is
+    // loaded: without this, "proceed" would load file:// or any other scheme.
+    const target = assertNavigable(String(url), { rendererDir: ctx.rendererDir });
+    analyzer.override(target);
+    events.record({ type: 'user-override', url: target });
     const t = getActiveTab();
-    if (t) t.view.webContents.loadURL(String(url));
+    if (t) t.view.webContents.loadURL(target);
     return true;
   });
   handle('soc:trust-site', (hostname) => {
-    analyzer.trustOrigin(String(hostname));
+    const host = String(hostname).toLowerCase();
+    if (!/^[a-z0-9.-]{1,255}$/.test(host) || !host.includes('.')) {
+      throw new Error(`"${host.slice(0, 40)}" is not a hostname`);
+    }
+    analyzer.trustOrigin(host);
     const list = settings.get('soc.allowlist') || [];
-    if (!list.includes(String(hostname))) settings.set('soc.allowlist', [...list, String(hostname)]);
-    events.record({ type: 'user-allowlist', hostname: String(hostname) });
+    if (!list.includes(host)) settings.set('soc.allowlist', [...list, host]);
+    events.record({ type: 'user-allowlist', hostname: host });
     return settings.get('soc.allowlist');
   });
 
   // --- Events / dashboard --------------------------------------------------
-  handle('events:query', (opts) => events.query(opts || {}));
+  handle('events:query', (opts) => {
+    const safe = opts && typeof opts === 'object' ? { ...opts } : {};
+    safe.limit = Math.min(Math.max(Number(safe.limit) || 200, 1), 1000);
+    return events.query(safe);
+  });
   handle('events:stats', (windowMs) => events.stats(Number(windowMs) || undefined));
   handle('events:clear', () => { events.clear(); return true; });
   handle('events:export', async () => {
@@ -82,6 +108,10 @@ function registerIpc(ctx) {
   handle('firewall:summary', () => ({ ...firewall.summary(), lists: blocklists.summary() }));
   handle('firewall:add-rule', (rule) => {
     if (!rule || typeof rule !== 'object' || !rule.match) throw new Error('a rule needs a match');
+    // Validate before it is live, not just before it is saved: a rule with a
+    // catastrophically backtracking pattern would hang every request.
+    const { validateSetting } = require('./storage/setting-validators');
+    validateSetting('firewall.customRules', [...firewall.rules, rule]);
     const added = firewall.addRule(rule);
     settings.set('firewall.customRules', firewall.rules);
     events.record({ type: 'firewall-rule-added', rule: added });
@@ -132,6 +162,13 @@ function registerIpc(ctx) {
         cancelId: 0,
       });
       if (response !== 1) return null;
+    }
+    // The destination is a setting, so it is renderer-reachable. Releasing even
+    // a clean file into an autostart or shell-profile directory is persistence.
+    const configured = settings.get('sandbox.releaseDir');
+    if (configured) {
+      const check = checkReleaseDir(configured);
+      if (!check.ok) throw new Error(`Cannot release there: ${check.reason}`);
     }
     return quarantine.release(String(id), { force: Boolean(force) });
   });
@@ -227,6 +264,10 @@ function registerIpc(ctx) {
     platform: `${os.type()} ${os.release()} ${os.arch()}`,
   }));
   handle('app:open-external', async (url) => {
+    // shell.openExternal hands a URL to the operating system's protocol
+    // handlers, which is how a web page gets another program to run. Only
+    // ordinary web and mail links are ever passed through.
+    assertSafeExternal(String(url));
     // A link out of Shadow leaves Shadow's protection, so say so first.
     const { response } = await dialog.showMessageBox(win(), {
       type: 'question',
@@ -254,11 +295,21 @@ function normalizeAddress(input, settings) {
     || /^localhost(:\d+)?(\/|$)/i.test(text);
 
   if (looksLikeUrl) {
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return text;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) {
+      // Only hand back a scheme a tab is allowed to load. Anything else is
+      // treated as a search phrase rather than silently opened.
+      return isNavigable(text) ? text : engineUrl(settings).replace('%s', encodeURIComponent(text));
+    }
     return `https://${text}`;
   }
-  const engine = (settings && settings.get('privacy.searchEngine')) || 'https://duckduckgo.com/?q=%s';
-  return engine.replace('%s', encodeURIComponent(text));
+  return engineUrl(settings).replace('%s', encodeURIComponent(text));
+}
+
+function engineUrl(settings) {
+  const engine = settings && settings.get('privacy.searchEngine');
+  return typeof engine === 'string' && engine.includes('%s')
+    ? engine
+    : 'https://duckduckgo.com/?q=%s';
 }
 
 module.exports = { registerIpc, normalizeAddress };

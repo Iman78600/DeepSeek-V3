@@ -36,10 +36,12 @@ class Analyzer {
     this.settings = settings;
     this.events = events;
     this.reputation = reputation;
-    this.cache = new Map();          // url -> { verdict, at }
+    this.cache = new Map();            // url -> { verdict, at }
     this.cacheTtlMs = 5 * 60 * 1000;
-    this.userAllow = new Set();      // origins the user explicitly trusted
-    this.sessionOverrides = new Map(); // url -> 'proceed'
+    this.cacheMax = 2000;              // bounded: a page can trigger lookups in a loop
+    this.userAllow = new Set();        // origins the user explicitly trusted
+    this.sessionOverrides = new Map(); // url -> when the user chose to proceed
+    this.overrideMax = 200;
   }
 
   mode() {
@@ -104,6 +106,12 @@ class Analyzer {
     verdict.stage = 'url';
     verdict.at = Date.now();
 
+    // Bounded, oldest-first. Without this a page that fetches a thousand
+    // unique subdomains grows the cache without limit.
+    if (this.cache.size >= this.cacheMax) {
+      const oldest = this.cache.keys().next().value;
+      this.cache.delete(oldest);
+    }
     this.cache.set(rawUrl, { verdict, at: Date.now() });
     this._log(verdict, context);
     return verdict;
@@ -144,6 +152,9 @@ class Analyzer {
 
   /** The user chose to continue past a warning, for this URL, this session. */
   override(url) {
+    if (this.sessionOverrides.size >= this.overrideMax) {
+      this.sessionOverrides.delete(this.sessionOverrides.keys().next().value);
+    }
     this.sessionOverrides.set(url, Date.now());
   }
 

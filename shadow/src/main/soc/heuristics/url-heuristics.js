@@ -128,6 +128,26 @@ function isIpLiteral(hostname) {
   return null;
 }
 
+/**
+ * Loopback, link-local, private ranges and local-only names. Kept in step with
+ * firewall/rules.js, which enforces the policy; this only decides how to score.
+ */
+function isLocalAddress(hostname) {
+  const h = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  if (!h) return null;
+  if (h === 'localhost' || h.endsWith('.localhost')) return 'localhost';
+  if (h === '::1' || h === '0:0:0:0:0:0:0:1') return 'loopback';
+  if (/^127\./.test(h)) return 'loopback';
+  if (/^10\./.test(h)) return 'private network';
+  if (/^192\.168\./.test(h)) return 'private network';
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return 'private network';
+  if (/^169\.254\./.test(h)) return 'link-local';
+  if (/^f[cd][0-9a-f]{2}:/.test(h)) return 'private network';
+  if (/^fe80:/.test(h)) return 'link-local';
+  if (/\.(?:local|internal|lan|home|intranet|private)$/.test(h)) return 'local network name';
+  return null;
+}
+
 /** Normalise confusable unicode down to ASCII so we can compare to brands. */
 function deconfuse(str) {
   let out = '';
@@ -205,6 +225,19 @@ function analyzeUrl(rawUrl) {
   }
 
   // --- Host shape ----------------------------------------------------------
+  // Loopback and private addresses are judged differently. Plain HTTP, a raw
+  // IP and a high port are all completely normal for a development server or a
+  // device on your own network, and scoring them the way we score a public
+  // site puts a warning on every page of anyone running one. The security
+  // question for these addresses is "may a web page reach them", which is the
+  // firewall's job, not the analyst's.
+  const localKind = isLocalAddress(hostname);
+  if (localKind) {
+    return [signal('url.local-address', 0, 'info', `Local address (${localKind})`,
+      'This address is on your own machine or your own network, so it is not scored like a public website. '
+      + 'Shadow still stops web pages from reaching addresses like this.')];
+  }
+
   const ipKind = isIpLiteral(hostname);
   if (ipKind) {
     const obfuscated = ipKind !== 'ipv4' && ipKind !== 'ipv6';
@@ -385,6 +418,7 @@ module.exports = {
   analyzeUrl,
   splitHost,
   isIpLiteral,
+  isLocalAddress,
   entropy,
   pronounceability,
   levenshtein,
