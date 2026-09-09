@@ -15,7 +15,10 @@
     "test": "node --test test/*.test.js",
     "update-lists": "node tools/update-blocklists.js",
     "test:functional": "xvfb-run -a electron tools/functional-test.js",
-    "boot-probe": "electron tools/boot-probe.js"
+    "boot-probe": "electron tools/boot-probe.js",
+    "build:mobile": "node mobile/build-app.js",
+    "build:ios": "node ios/build-assets.js",
+    "build:blocker": "node mobile/build-content-blocker.js"
   },
   "devDependencies": {
     "electron": "^44.3.0"

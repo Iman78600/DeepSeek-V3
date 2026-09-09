@@ -14,3 +14,6 @@ config/lists/ads.txt
 # Runtime state, never in the repo
 .shadow/
 *.jsonl
+
+# Generated for the iOS bundle by ios/build-assets.js
+ios/Shadow/Resources/

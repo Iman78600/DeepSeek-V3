@@ -1,0 +1,695 @@
+<title>Shadow Analyst</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Shadow Analyst. Committed to a dark console palette: the product is called
+   Shadow, it is a security instrument, and it is read on a phone at night.
+   Every colour is painted explicitly so the page holds on any host ground. */
+:root {
+  --ink:      #0A0C11;
+  --panel:    #12161F;
+  --panel-2:  #1A202C;
+  --line:     #252C3A;
+  --line-2:   #333C4E;
+  --text:     #E4E8F0;
+  --muted:    #7E8799;
+  --accent:   #5B9CFF;
+
+  --clear:    #3ECF8E;
+  --caution:  #F0B429;
+  --danger:   #FF5D5D;
+  --high:     #FF8F4D;
+
+  --sev-critical: var(--danger);
+  --sev-high:     var(--high);
+  --sev-medium:   var(--caution);
+  --sev-low:      var(--muted);
+  --sev-info:     var(--accent);
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --r: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  padding: 0 0 max(32px, env(safe-area-inset-bottom));
+}
+
+.wrap {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ---------------------------------------------------------------- header */
+header {
+  padding: max(20px, env(safe-area-inset-top)) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.glyph {
+  width: 26px; height: 26px;
+  flex: none;
+}
+h1 {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.sub {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.sub b { color: var(--clear); font-weight: 500; }
+
+/* ------------------------------------------------------- segmented control */
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: 3px;
+}
+.modes button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 500 14px var(--sans);
+  padding: 9px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.modes button[aria-selected="true"] {
+  background: var(--panel-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+.modes button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ------------------------------------------------------------------ input */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+label.lbl {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+input[type="text"] {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--text);
+  font: 400 16px/1.4 var(--mono);
+  padding: 13px 14px;
+  word-break: break-all;
+}
+input[type="text"]::placeholder { color: #566072; }
+input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(91,156,255,.16);
+}
+
+.go {
+  appearance: none;
+  border: 0;
+  border-radius: var(--r);
+  background: var(--accent);
+  color: #08111F;
+  font: 600 16px var(--sans);
+  padding: 14px;
+  cursor: pointer;
+  min-height: 48px;
+}
+.go:active { filter: brightness(.9); }
+.go:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+.drop {
+  border: 1px dashed var(--line-2);
+  border-radius: var(--r);
+  background: var(--panel);
+  padding: 26px 16px;
+  text-align: center;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.drop strong { font-weight: 600; font-size: 15px; }
+.drop span { color: var(--muted); font-size: 13px; }
+.drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="file"] { display: none; }
+
+.hidden { display: none !important; }
+
+/* ---------------------------------------------------------------- verdict */
+/* The verdict is the instrument readout, not another card in a stack. It gets
+   a full-bleed severity band so the answer registers before any text. */
+.verdict {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  overflow: hidden;
+  background: var(--panel);
+}
+.band {
+  height: 4px;
+  background: var(--v);
+}
+.vhead {
+  padding: 15px 16px 14px;
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+.score {
+  font-family: var(--mono);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--v);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+.score small {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.vtext { min-width: 0; flex: 1; }
+.vcall {
+  font-weight: 600;
+  font-size: 16.5px;
+  color: var(--v);
+  letter-spacing: -0.01em;
+}
+.vhost {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+  margin-top: 2px;
+}
+.egmark {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .1em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+/* Risk meter: one scale, ticks at the thresholds the engine actually uses. */
+.meter {
+  padding: 0 16px 15px;
+}
+.track {
+  position: relative;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.fill {
+  position: absolute; inset: 0 auto 0 0;
+  border-radius: 3px;
+  background: var(--v);
+}
+.tick {
+  position: absolute;
+  top: -3px; bottom: -3px;
+  width: 1px;
+  background: var(--line-2);
+}
+.ticklab {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--muted);
+  letter-spacing: .04em;
+  margin-top: 6px;
+}
+
+/* ---------------------------------------------------------------- findings */
+.findings { display: flex; flex-direction: column; }
+.finding {
+  border-top: 1px solid var(--line);
+  padding: 13px 16px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 11px;
+  align-items: start;
+}
+.chip {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--ink);
+  background: var(--c);
+  white-space: nowrap;
+  margin-top: 2px;
+}
+.ftitle { font-weight: 600; font-size: 14.5px; letter-spacing: -0.005em; }
+.fdetail {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+.fdetail code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.nothing {
+  padding: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+/* ------------------------------------------------------------------ facts */
+.facts {
+  border-top: 1px solid var(--line);
+  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 14px;
+  font-size: 12.5px;
+}
+.facts dt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+  padding-top: 1px;
+}
+.facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  word-break: break-all;
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  border-top: 1px solid var(--line);
+  padding: 11px 16px;
+  font-size: 12.5px;
+  color: var(--caution);
+  background: rgba(240,180,41,.05);
+}
+
+/* --------------------------------------------------------------- sections */
+section.info {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--panel);
+  padding: 15px 16px;
+}
+section.info h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 8px;
+  letter-spacing: -0.005em;
+}
+section.info p { margin: 0 0 9px; font-size: 13.5px; color: var(--muted); }
+section.info p:last-child { margin-bottom: 0; }
+section.info b { color: var(--text); font-weight: 600; }
+ol.steps {
+  margin: 0; padding-left: 18px;
+  font-size: 13.5px; color: var(--muted);
+  display: flex; flex-direction: column; gap: 5px;
+}
+ol.steps b { color: var(--text); }
+.kbd {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.rule { height: 1px; background: var(--line); margin: 13px 0; }
+
+footer {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-family: var(--mono);
+  text-align: center;
+  padding: 4px 0 0;
+  line-height: 1.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 2 3.5 5.4v6.1c0 4.6 3.4 8.9 8.5 10.5 5.1-1.6 8.5-5.9 8.5-10.5V5.4L12 2Z"
+              fill="#12161F" stroke="#5B9CFF" stroke-width="1.4" stroke-linejoin="round"/>
+        <path d="M12 2v20c5.1-1.6 8.5-5.9 8.5-10.5V5.4L12 2Z" fill="#5B9CFF" fill-opacity=".18"/>
+        <path d="m8.4 12.1 2.5 2.5 4.7-4.9" stroke="#5B9CFF" stroke-width="1.6"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h1>Shadow Analyst</h1>
+    </div>
+    <div class="sub">On-device &middot; <b>nothing leaves your phone</b></div>
+  </header>
+
+  <div class="modes" role="tablist" aria-label="What to check">
+    <button role="tab" id="tab-link" aria-selected="true" aria-controls="panel-link">Check a link</button>
+    <button role="tab" id="tab-file" aria-selected="false" aria-controls="panel-file">Scan a file</button>
+  </div>
+
+  <div class="field" id="panel-link" role="tabpanel" aria-labelledby="tab-link">
+    <label class="lbl" for="url">Paste a link before you tap it</label>
+    <input id="url" type="text" inputmode="url" autocapitalize="off" autocorrect="off"
+           spellcheck="false" placeholder="https://…" value="">
+    <button class="go" id="check">Check this link</button>
+  </div>
+
+  <div class="field hidden" id="panel-file" role="tabpanel" aria-labelledby="tab-file">
+    <label class="lbl">Take a file apart before you open it</label>
+    <div class="drop" id="drop" tabindex="0" role="button">
+      <strong>Choose a file</strong>
+      <span>From Files, Photos, or an email attachment</span>
+    </div>
+    <input type="file" id="file">
+  </div>
+
+  <div id="result"></div>
+
+  <section class="info">
+    <h2>Keep it on your Home Screen</h2>
+    <ol class="steps">
+      <li>Tap the <b>Share</b> button in Safari, the square with the arrow.</li>
+      <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+      <li>Tap <b>Add</b>. It opens like an app and works with no signal.</li>
+    </ol>
+    <div class="rule"></div>
+    <h2>Check links from any app</h2>
+    <p>Make a Shortcut so a suspicious link in Messages or Mail goes straight here.</p>
+    <ol class="steps">
+      <li>Open <b>Shortcuts</b> and make a new one.</li>
+      <li>Turn on <b>Use as Quick Action &rarr; Share Sheet</b>, accepting URLs.</li>
+      <li>Add the action <b>Open URLs</b>, and set the URL to this page followed by
+        <span class="kbd">?u=</span> and the <b>Shortcut Input</b>.</li>
+    </ol>
+    <p style="margin-top:9px">Now share any link to it and the verdict opens straight away.</p>
+  </section>
+
+  <section class="info">
+    <h2>What this is, and what it is not</h2>
+    <p><b>It is</b> Shadow's analyst: the same detection code as the desktop browser,
+      compiled to run on your phone. Every check happens on this device. No link
+      and no file you check is ever uploaded anywhere.</p>
+    <p><b>It is not</b> the Shadow browser. Apple requires every iPhone browser to use
+      its own engine, so the firewall, the Tor routing and the download sandbox cannot
+      be delivered as an app store browser. This is the analyst half, which is the half
+      that fits.</p>
+    <p><b>A clean result is not a promise.</b> It means nothing matched the patterns
+      attackers actually use. That covers a great deal, but it cannot catch something
+      built specifically for you.</p>
+  </section>
+
+  <footer>
+    Shadow <span id="ver">0.1.0</span> &middot; MIT<br>
+    Detection engine built from the desktop source
+  </footer>
+</div>
+
+<script>/*__ENGINE__*/</script>
+<script>
+'use strict';
+
+const E = window.ShadowEngine;
+const $ = (s) => document.querySelector(s);
+const el = (t, c, txt) => {
+  const n = document.createElement(t);
+  if (c) n.className = c;
+  if (txt !== undefined) n.textContent = txt;
+  return n;
+};
+
+const SEV_COLOR = {
+  critical: 'var(--sev-critical)', high: 'var(--sev-high)', medium: 'var(--sev-medium)',
+  low: 'var(--sev-low)', info: 'var(--sev-info)',
+};
+const VERDICT = {
+  block: { color: 'var(--danger)', call: 'Do not open this' },
+  warn:  { color: 'var(--caution)', call: 'Look before you continue' },
+  allow: { color: 'var(--clear)', call: 'Nothing suspicious found' },
+};
+
+function humanBytes(n) {
+  const u = ['B', 'KB', 'MB', 'GB'];
+  let v = n, i = 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return v.toFixed(i ? 1 : 0) + ' ' + u[i];
+}
+
+/** Render a verdict from the engine. `facts` are subject-specific rows. */
+function render(verdict, facts, notes, exampleLabel) {
+  const v = VERDICT[verdict.verdict] || VERDICT.warn;
+  const box = el('div', 'verdict');
+  box.style.setProperty('--v', v.color);
+
+  box.appendChild(el('div', 'band'));
+
+  const head = el('div', 'vhead');
+  const score = el('div', 'score');
+  score.appendChild(document.createTextNode(String(verdict.score)));
+  const small = el('small', null, '/100');
+  score.appendChild(small);
+  head.appendChild(score);
+
+  const txt = el('div', 'vtext');
+  txt.appendChild(el('div', 'vcall', v.call));
+  const host = el('div', 'vhost');
+  if (exampleLabel) host.appendChild(el('span', 'egmark', 'EXAMPLE'));
+  host.appendChild(document.createTextNode(verdict.hostname || (verdict.file && verdict.file.name) || ''));
+  txt.appendChild(host);
+  head.appendChild(txt);
+  box.appendChild(head);
+
+  // Risk meter, drawn to the same thresholds the engine scores against.
+  const meter = el('div', 'meter');
+  const track = el('div', 'track');
+  const fill = el('div', 'fill');
+  fill.style.width = Math.max(2, Math.min(100, verdict.score)) + '%';
+  track.appendChild(fill);
+  for (const at of [verdict.threshold.warn, verdict.threshold.block]) {
+    const t = el('div', 'tick');
+    t.style.left = at + '%';
+    track.appendChild(t);
+  }
+  meter.appendChild(track);
+  const labs = el('div', 'ticklab');
+  labs.appendChild(el('span', null, 'CLEAR'));
+  labs.appendChild(el('span', null, 'CAUTION ' + verdict.threshold.warn));
+  labs.appendChild(el('span', null, 'BLOCK ' + verdict.threshold.block));
+  meter.appendChild(labs);
+  box.appendChild(meter);
+
+  // Findings as rows, ranked by weight.
+  const list = el('div', 'findings');
+  const shown = verdict.signals.filter((s) => (s.score || 0) > 0);
+  if (!shown.length) {
+    list.appendChild(el('div', 'nothing',
+      'None of Shadow’s checks fired. Every one of them looked and found nothing to report.'));
+  }
+  for (const s of shown) {
+    const row = el('div', 'finding');
+    const chip = el('div', 'chip', s.severity);
+    chip.style.setProperty('--c', SEV_COLOR[s.severity] || SEV_COLOR.info);
+    row.appendChild(chip);
+    row.appendChild(el('div', 'ftitle', s.title));
+    if (s.detail) row.appendChild(el('div', 'fdetail', s.detail));
+    list.appendChild(row);
+  }
+  box.appendChild(list);
+
+  if (facts && facts.length) {
+    const dl = el('dl', 'facts');
+    for (const [k, val] of facts) {
+      dl.appendChild(el('dt', null, k));
+      dl.appendChild(el('dd', null, val));
+    }
+    box.appendChild(dl);
+  }
+
+  for (const n of (notes || [])) box.appendChild(el('div', 'note', n));
+
+  const out = $('#result');
+  out.textContent = '';
+  out.appendChild(box);
+}
+
+function showError(message) {
+  const out = $('#result');
+  out.textContent = '';
+  const box = el('div', 'verdict');
+  box.style.setProperty('--v', 'var(--caution)');
+  box.appendChild(el('div', 'band'));
+  const head = el('div', 'vhead');
+  const txt = el('div', 'vtext');
+  txt.appendChild(el('div', 'vcall', 'Could not check that'));
+  txt.appendChild(el('div', 'vhost', message));
+  head.appendChild(txt);
+  box.appendChild(head);
+  out.appendChild(box);
+}
+
+// ------------------------------------------------------------------- links
+function normalise(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(text)) return text;
+  return 'https://' + text;
+}
+
+function checkLink(raw, isExample) {
+  const url = normalise(raw);
+  if (!url) { showError('Paste a link first.'); return; }
+  let verdict;
+  try {
+    verdict = E.checkUrl(url, {});
+  } catch (err) {
+    showError(err.message);
+    return;
+  }
+  const parts = E.splitHost(verdict.hostname || '');
+  const facts = [];
+  if (parts.registrable) facts.push(['Real owner', parts.registrable]);
+  try {
+    const u = new URL(url);
+    facts.push(['Connection', u.protocol === 'https:' ? 'encrypted (https)' : 'NOT encrypted (' + u.protocol.replace(':', '') + ')']);
+    if (u.port) facts.push(['Port', u.port]);
+  } catch (e) { /* checkUrl already reported it */ }
+  facts.push(['Findings', String(verdict.signals.filter((s) => (s.score || 0) > 0).length)]);
+
+  render(verdict, facts, null, isExample);
+  if (!isExample) history.replaceState(null, '', location.pathname + '?u=' + encodeURIComponent(url));
+}
+
+// ------------------------------------------------------------------- files
+function checkFile(file) {
+  const reader = new FileReader();
+  reader.onerror = () => showError('That file could not be read.');
+  reader.onload = () => {
+    let verdict;
+    try {
+      verdict = E.scanBytes(reader.result, { name: file.name, mimeType: file.type });
+    } catch (err) {
+      showError(err.message);
+      return;
+    }
+    const facts = [
+      ['Real type', verdict.detectedType],
+      ['Named', verdict.declaredExtension || '(no extension)'],
+      ['Size', humanBytes(verdict.file.size)],
+      ['SHA-256', verdict.hashes.sha256],
+    ];
+    if (verdict.network && verdict.network.urls.length) {
+      facts.push(['Links inside', verdict.network.urls.length + ' found']);
+    }
+    if (verdict.formatInfo.zip) {
+      facts.push(['Archive', verdict.formatInfo.zip.entryCount + ' files'
+        + (verdict.formatInfo.zip.encrypted ? ', encrypted' : '')]);
+    }
+    render(verdict, facts, verdict.limitations);
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// -------------------------------------------------------------------- wire
+$('#tab-link').addEventListener('click', () => switchMode('link'));
+$('#tab-file').addEventListener('click', () => switchMode('file'));
+
+function switchMode(mode) {
+  const isLink = mode === 'link';
+  $('#tab-link').setAttribute('aria-selected', String(isLink));
+  $('#tab-file').setAttribute('aria-selected', String(!isLink));
+  $('#panel-link').classList.toggle('hidden', !isLink);
+  $('#panel-file').classList.toggle('hidden', isLink);
+  $('#result').textContent = '';
+}
+
+$('#check').addEventListener('click', () => checkLink($('#url').value));
+$('#url').addEventListener('keydown', (e) => { if (e.key === 'Enter') checkLink($('#url').value); });
+
+$('#drop').addEventListener('click', () => $('#file').click());
+$('#drop').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('#file').click(); }
+});
+$('#file').addEventListener('change', (e) => { if (e.target.files[0]) checkFile(e.target.files[0]); });
+
+// ------------------------------------------------------------------- start
+// Open in a working state. A link handed over by the iOS Shortcut is checked
+// straight away; otherwise show a real phishing URL already analysed, clearly
+// marked as an example, so the page shows what it does before you type.
+const shared = new URLSearchParams(location.search).get('u');
+$('#ver').textContent = E.version;
+
+if (shared) {
+  $('#url').value = shared;
+  checkLink(shared);
+} else {
+  const example = 'http://paypal.com.secure-verify.tk/login/confirm-account';
+  $('#url').value = example;
+  checkLink(example, true);
+}
+</script>

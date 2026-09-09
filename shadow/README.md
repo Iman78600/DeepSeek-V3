@@ -252,6 +252,8 @@ shadow/
     browser-preload.js       the UI bridge
   src/renderer/              browser chrome, SOC dashboard, block page
   config/                    default settings, presets, blocklists
+  mobile/                    phone build: engine bundle, web app, Safari blocker
+  ios/                       native SwiftUI app sharing the same engine
   tools/                     CLI scanner, blocklist updater, functional test
   test/                      117 unit tests, including security regressions
 ```
@@ -272,6 +274,27 @@ and any sample from [MalwareBazaar](https://bazaar.abuse.ch/) work fine through
 the CLI. Do that in a virtual machine, not on your daily driver.
 
 ---
+
+## On a phone
+
+Shadow's desktop build cannot run on iOS: Electron does not exist there, and
+Apple requires every iPhone browser to use its own WebKit engine. But the
+analyst does move, and it moves as the *same code*, not a reimplementation.
+
+```bash
+npm run build:mobile    # a self-contained page: check links, scan files, works offline
+npm run build:blocker   # Shadow's blocklists as a Safari content blocker
+npm run build:ios       # shared JS into the native app bundle
+```
+
+`mobile/build-engine.js` wraps the desktop source in a small CommonJS shim with
+browser implementations of the four Node pieces it touches, then
+`test/mobile-engine.test.js` demands byte-identical verdicts between the two
+builds on every URL, page and file sample. If they ever drift, the tests fail.
+
+**[ios/README.md](ios/README.md)** lays out what survives the move to iOS and
+what does not, feature by feature, along with what it costs to actually install
+a browser on your own phone.
 
 ## Shadow has been audited too
 
