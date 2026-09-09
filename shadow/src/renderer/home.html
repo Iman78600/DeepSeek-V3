@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'">
+  <title>Shadow</title>
+  <style>
+    :root { --bg:#0d0f14; --card:#151922; --line:#262c3a; --text:#e6e9ef; --muted:#8b93a7; --accent:#5b9cff; }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+      font:14px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+      display:flex; align-items:center; justify-content:center; padding:40px;
+    }
+    .wrap { max-width:760px; width:100%; }
+    h1 { font-size:40px; margin:0 0 4px; letter-spacing:-0.02em; }
+    .tag { color:var(--muted); margin-bottom:32px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+    .card h3 { margin:0 0 6px; font-size:14px; }
+    .card p { margin:0; color:var(--muted); font-size:13px; }
+    .note { margin-top:28px; color:var(--muted); font-size:12px; border-top:1px solid var(--line); padding-top:16px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Shadow</h1>
+    <div class="tag">A browser that watches the web the way a security analyst would.</div>
+    <div class="grid">
+      <div class="card">
+        <h3>The analyst</h3>
+        <p>Every page is scored before it loads and again after it renders. Phishing, fake support pages, cryptominers and pages that tell you to paste a command get stopped.</p>
+      </div>
+      <div class="card">
+        <h3>The firewall</h3>
+        <p>Every request a page makes is filtered. Known-bad hosts, trackers, odd ports, and any attempt to reach your own network are dropped.</p>
+      </div>
+      <div class="card">
+        <h3>The sandbox</h3>
+        <p>Downloads land in quarantine, stripped of the ability to run, and are taken apart before you are allowed to touch them.</p>
+      </div>
+      <div class="card">
+        <h3>Tor</h3>
+        <p>Turn it on in settings to route everything through the Tor network. If Tor is not actually running, Shadow refuses to connect rather than quietly leak.</p>
+      </div>
+    </div>
+    <div class="note">
+      Every decision is made on this machine. Shadow does not send the pages you visit to any service.
+      Press Ctrl+Shift+S for the SOC dashboard.
+    </div>
+  </div>
+</body>
+</html>

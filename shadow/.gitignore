@@ -1,0 +1,16 @@
+node_modules/
+dist/
+out/
+
+# Blocklists fetched by tools/update-blocklists.js. These are large, change
+# constantly, and are regenerated on demand. custom.txt is yours and is kept.
+config/lists/malware.txt
+config/lists/phishing.txt
+config/lists/mining.txt
+config/lists/scam.txt
+config/lists/tracker.txt
+config/lists/ads.txt
+
+# Runtime state, never in the repo
+.shadow/
+*.jsonl

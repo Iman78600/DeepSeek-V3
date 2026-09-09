@@ -1,0 +1,76 @@
+{
+  "standard": {
+    "label": "Standard",
+    "summary": "Everyday browsing. Blocks known-bad sites, ads and trackers, sandboxes every download, and keeps the network firewall on. Sites work normally.",
+    "settings": {
+      "soc.mode": "relaxed",
+      "firewall.httpsOnly": true,
+      "firewall.blockPrivateNetwork": true,
+      "firewall.blockTrackers": true,
+      "firewall.blockAds": true,
+      "firewall.lockdown": false,
+      "hardening.javascript": true,
+      "hardening.webrtc": "public-only",
+      "hardening.canvasNoise": false,
+      "hardening.blockThirdPartyCookies": true,
+      "hardening.blockWebgl": false,
+      "tor.enabled": false,
+      "sandbox.detonate": false,
+      "privacy.clearOnExit": false
+    }
+  },
+  "balanced": {
+    "label": "Balanced (default)",
+    "summary": "The recommended setting. Adds fingerprinting protection, WebRTC leak blocking, and a stricter analyst threshold. A small number of sites may need an exception.",
+    "settings": {
+      "soc.mode": "balanced",
+      "firewall.httpsOnly": true,
+      "firewall.blockPrivateNetwork": true,
+      "firewall.blockTrackers": true,
+      "firewall.blockAds": true,
+      "firewall.blockMining": true,
+      "firewall.lockdown": false,
+      "hardening.javascript": true,
+      "hardening.webrtc": "disabled",
+      "hardening.canvasNoise": true,
+      "hardening.fontProtection": true,
+      "hardening.blockThirdPartyCookies": true,
+      "hardening.spoofUserAgent": true,
+      "hardening.denyPermissions": true,
+      "tor.enabled": false,
+      "sandbox.detonate": false,
+      "privacy.clearOnExit": true
+    }
+  },
+  "ghost": {
+    "label": "Ghost",
+    "summary": "Maximum protection. Traffic goes through Tor, third-party scripts and frames are blocked outright, WebGL and WebAssembly are off, every download is detonated, and everything is wiped on exit. Many sites will break. That is the trade.",
+    "settings": {
+      "soc.mode": "strict",
+      "firewall.httpsOnly": true,
+      "firewall.blockPrivateNetwork": true,
+      "firewall.blockTrackers": true,
+      "firewall.blockAds": true,
+      "firewall.blockMining": true,
+      "firewall.lockdown": true,
+      "firewall.blockThreshold": 5,
+      "hardening.javascript": true,
+      "hardening.webrtc": "disabled",
+      "hardening.canvasNoise": true,
+      "hardening.fontProtection": true,
+      "hardening.timingJitter": true,
+      "hardening.blockThirdPartyCookies": true,
+      "hardening.blockWebgl": true,
+      "hardening.disableWebAssembly": true,
+      "hardening.spoofUserAgent": true,
+      "hardening.denyPermissions": true,
+      "tor.enabled": true,
+      "tor.autoStart": true,
+      "tor.newCircuitPerSite": true,
+      "sandbox.detonate": true,
+      "sandbox.autoDeleteMalicious": true,
+      "privacy.clearOnExit": true,
+      "privacy.persistLog": false
+    }
+  }
+}

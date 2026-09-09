@@ -1,0 +1,83 @@
+'use strict';
+/**
+ * A trimmed public-suffix list. The full IANA/Mozilla list is ~9,000 entries;
+ * this covers the multi-label suffixes that matter for telling "who really
+ * owns this domain" apart from "who picked this subdomain".
+ *
+ * tools/update-blocklists.js can refresh this from publicsuffix.org.
+ */
+const PUBLIC_SUFFIXES = new Set([
+  // Multi-label country suffixes
+  'co.uk', 'org.uk', 'me.uk', 'ac.uk', 'gov.uk', 'net.uk', 'sch.uk', 'ltd.uk', 'plc.uk',
+  'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au', 'id.au', 'asn.au',
+  'co.nz', 'net.nz', 'org.nz', 'govt.nz', 'ac.nz', 'school.nz',
+  'co.za', 'org.za', 'net.za', 'gov.za', 'ac.za', 'web.za',
+  'com.br', 'net.br', 'org.br', 'gov.br', 'edu.br',
+  'com.mx', 'org.mx', 'net.mx', 'gob.mx', 'edu.mx',
+  'com.ar', 'net.ar', 'org.ar', 'gob.ar', 'edu.ar',
+  'co.in', 'net.in', 'org.in', 'gen.in', 'firm.in', 'ind.in', 'gov.in', 'ac.in', 'edu.in',
+  'co.jp', 'ne.jp', 'or.jp', 'ac.jp', 'go.jp', 'ad.jp', 'ed.jp', 'gr.jp', 'lg.jp',
+  'co.kr', 'ne.kr', 'or.kr', 're.kr', 'go.kr', 'ac.kr', 'pe.kr',
+  'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn', 'ac.cn',
+  'com.hk', 'net.hk', 'org.hk', 'gov.hk', 'edu.hk', 'idv.hk',
+  'com.tw', 'net.tw', 'org.tw', 'gov.tw', 'edu.tw',
+  'com.sg', 'net.sg', 'org.sg', 'gov.sg', 'edu.sg', 'per.sg',
+  'com.my', 'net.my', 'org.my', 'gov.my', 'edu.my',
+  'com.ph', 'net.ph', 'org.ph', 'gov.ph', 'edu.ph',
+  'co.id', 'or.id', 'ac.id', 'go.id', 'web.id', 'my.id',
+  'com.tr', 'net.tr', 'org.tr', 'gov.tr', 'edu.tr', 'bel.tr',
+  'com.ua', 'net.ua', 'org.ua', 'gov.ua', 'edu.ua', 'in.ua', 'kiev.ua',
+  'com.pl', 'net.pl', 'org.pl', 'gov.pl', 'edu.pl', 'waw.pl',
+  'com.ru', 'net.ru', 'org.ru', 'edu.ru', 'gov.ru', 'msk.ru', 'spb.ru',
+  'co.il', 'org.il', 'net.il', 'ac.il', 'gov.il', 'k12.il',
+  'com.sa', 'net.sa', 'org.sa', 'gov.sa', 'edu.sa',
+  'co.ae', 'net.ae', 'org.ae', 'gov.ae', 'ac.ae', 'sch.ae',
+  'com.pk', 'net.pk', 'org.pk', 'gov.pk', 'edu.pk',
+  'com.bd', 'net.bd', 'org.bd', 'gov.bd', 'edu.bd',
+  'com.ng', 'net.ng', 'org.ng', 'gov.ng', 'edu.ng',
+  'com.eg', 'net.eg', 'org.eg', 'gov.eg', 'edu.eg',
+  'co.ke', 'or.ke', 'ne.ke', 'go.ke', 'ac.ke',
+  'com.vn', 'net.vn', 'org.vn', 'gov.vn', 'edu.vn',
+  'com.co', 'net.co', 'org.co', 'gov.co', 'edu.co',
+  'com.pe', 'net.pe', 'org.pe', 'gob.pe', 'edu.pe',
+  'com.ve', 'net.ve', 'org.ve', 'gob.ve', 'edu.ve',
+  'co.th', 'in.th', 'ac.th', 'go.th', 'or.th', 'net.th',
+  'com.es', 'org.es', 'nom.es', 'gob.es', 'edu.es',
+  'co.it', 'gov.it', 'edu.it',
+  'co.at', 'or.at', 'ac.at', 'gv.at', 'priv.at',
+  'co.hu', 'org.hu', 'priv.hu',
+  'com.gr', 'net.gr', 'org.gr', 'gov.gr', 'edu.gr',
+  'com.pt', 'org.pt', 'gov.pt', 'edu.pt',
+  'com.ro', 'org.ro', 'nom.ro', 'store.ro',
+  'com.uy', 'net.uy', 'org.uy', 'gub.uy', 'edu.uy',
+  'com.ec', 'net.ec', 'org.ec', 'gob.ec', 'edu.ec',
+  'com.cy', 'net.cy', 'org.cy', 'gov.cy', 'ac.cy',
+  'com.hr', 'from.hr', 'name.hr',
+  'co.rs', 'org.rs', 'edu.rs', 'gov.rs', 'in.rs',
+  'co.ug', 'or.ug', 'ac.ug', 'go.ug',
+  'co.tz', 'or.tz', 'ac.tz', 'go.tz',
+  'co.zm', 'org.zm', 'ac.zm', 'gov.zm',
+
+  // Platform suffixes: the label to the left is user-chosen, not a real owner.
+  'github.io', 'gitlab.io', 'githubusercontent.com', 'pages.dev', 'workers.dev',
+  'netlify.app', 'netlify.com', 'vercel.app', 'now.sh', 'surge.sh', 'firebaseapp.com',
+  'web.app', 'appspot.com', 'run.app', 'cloudfunctions.net', 'azurewebsites.net',
+  'azureedge.net', 'blob.core.windows.net', 'cloudapp.azure.com', 'trafficmanager.net',
+  'herokuapp.com', 'herokudns.com', 'elasticbeanstalk.com', 'amazonaws.com',
+  's3.amazonaws.com', 'cloudfront.net', 'awsapprunner.com', 'repl.co', 'replit.dev',
+  'glitch.me', 'render.com', 'onrender.com', 'fly.dev', 'railway.app', 'up.railway.app',
+  'ngrok.io', 'ngrok-free.app', 'ngrok.app', 'trycloudflare.com', 'loca.lt',
+  'serveo.net', 'localtunnel.me', 'tunnelto.dev', 'bore.pub',
+  'weeblysite.com', 'wixsite.com', 'squarespace.com', 'webflow.io', 'wordpress.com',
+  'blogspot.com', 'tumblr.com', 'weebly.com', 'jimdosite.com', 'strikingly.com',
+  'shopify.com', 'myshopify.com', 'bigcartel.com', 'ecwid.com',
+  'sharepoint.com', 'blob.core.usgovcloudapi.net', 'notion.site', 'super.site',
+  'gitbook.io', 'readthedocs.io', 'bitbucket.io', 'sourceforge.io',
+  'zendesk.com', 'freshdesk.com', 'atlassian.net', 'discourse.group',
+  'r2.dev', 'b-cdn.net', 'cdn.digitaloceanspaces.com', 'ondigitalocean.app',
+  'oraclecloud.com', 'objectstorage.us-ashburn-1.oraclecloud.com',
+  'backblazeb2.com', 'storage.googleapis.com', 'storage.yandexcloud.net',
+  'ipfs.io', 'dweb.link', 'ipfs.dweb.link', 'nftstorage.link', 'w3s.link',
+]);
+
+module.exports = { PUBLIC_SUFFIXES };

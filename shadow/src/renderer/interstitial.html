@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' file:; style-src 'unsafe-inline'">
+  <title>Shadow blocked this page</title>
+  <style>
+    :root {
+      --bg:#12070a; --card:#1c0d12; --line:#3a1a22; --text:#f2e9ea;
+      --muted:#b39aa0; --crit:#ff5d5d; --warn:#f0b429;
+    }
+    * { box-sizing:border-box; }
+    body {
+      margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+      font:14px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+      display:flex; align-items:center; justify-content:center; padding:32px;
+    }
+    .wrap { max-width:720px; width:100%; }
+    .mark { font-size:44px; margin-bottom:8px; }
+    h1 { font-size:26px; margin:0 0 6px; }
+    .sub { color:var(--muted); margin-bottom:22px; }
+    .target {
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px;
+      background:var(--card); border:1px solid var(--line); border-radius:8px;
+      padding:10px 12px; word-break:break-all; margin-bottom:22px;
+    }
+    .score { display:flex; align-items:baseline; gap:10px; margin-bottom:18px; }
+    .score .n { font-size:40px; font-weight:700; color:var(--crit); line-height:1; }
+    .score .l { color:var(--muted); font-size:13px; }
+    .finding {
+      background:var(--card); border:1px solid var(--line);
+      border-left:3px solid var(--crit); border-radius:8px;
+      padding:12px 14px; margin-bottom:10px;
+    }
+    .finding.high { border-left-color:#ff8f4d; }
+    .finding.medium { border-left-color:var(--warn); }
+    .finding.low { border-left-color:var(--muted); }
+    .finding h3 { margin:0 0 4px; font-size:14px; }
+    .finding p { margin:0; color:var(--muted); font-size:13px; }
+    .actions { display:flex; gap:10px; margin-top:26px; flex-wrap:wrap; }
+    button {
+      font:inherit; font-size:13px; padding:9px 16px; border-radius:8px;
+      border:1px solid var(--line); background:var(--card); color:var(--text); cursor:default;
+    }
+    button.primary { background:#2a6df4; border-color:#2a6df4; color:#fff; font-weight:600; }
+    button.danger { color:var(--crit); border-color:var(--crit); background:transparent; }
+    button:hover { filter:brightness(1.15); }
+    .fineprint { margin-top:18px; color:var(--muted); font-size:12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="mark" id="mark">&#9888;</div>
+    <h1 id="headline">Shadow blocked this page</h1>
+    <div class="sub" id="subline">The analyst found enough evidence to stop the page before it loaded.</div>
+    <div class="target" id="target"></div>
+    <div class="score"><div class="n" id="score">0</div><div class="l" id="scorelabel"></div></div>
+    <div id="findings"></div>
+    <div class="actions">
+      <button class="primary" id="back">Go back to safety</button>
+      <button id="home">Open a new tab</button>
+      <button class="danger" id="proceed">I understand the risk, continue</button>
+    </div>
+    <div class="fineprint" id="fineprint"></div>
+  </div>
+  <script src="interstitial.js"></script>
+</body>
+</html>

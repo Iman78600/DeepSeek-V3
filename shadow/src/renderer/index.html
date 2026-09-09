@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self' file:; style-src 'self' file:; img-src 'self' data:; font-src 'self'">
+  <title>Shadow</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="chrome">
+    <div id="tabstrip">
+      <div id="tabs"></div>
+      <button id="new-tab" class="icon-btn" title="New tab">+</button>
+    </div>
+
+    <div id="toolbar">
+      <button id="back" class="icon-btn" title="Back">&#8592;</button>
+      <button id="forward" class="icon-btn" title="Forward">&#8594;</button>
+      <button id="reload" class="icon-btn" title="Reload">&#8635;</button>
+
+      <div id="addressbar">
+        <span id="risk-badge" class="badge unknown" title="Site risk">&#9679;</span>
+        <input id="address" type="text" spellcheck="false" autocomplete="off"
+               placeholder="Search, or type an address">
+        <span id="blocked-count" class="counter" title="Requests the firewall blocked on this page">0</span>
+      </div>
+
+      <button id="btn-shield" class="icon-btn" title="Site report">&#128737;</button>
+      <button id="btn-downloads" class="icon-btn" title="Downloads">&#8595;</button>
+      <button id="btn-soc" class="icon-btn" title="SOC dashboard">&#128200;</button>
+      <button id="btn-tor" class="icon-btn tor-off" title="Tor">&#9679; Tor</button>
+      <button id="btn-settings" class="icon-btn" title="Settings">&#9881;</button>
+    </div>
+  </div>
+
+  <!-- Slide-over panels ---------------------------------------------------->
+  <div id="panel" class="hidden">
+    <div id="panel-head">
+      <h2 id="panel-title">Panel</h2>
+      <button id="panel-close" class="icon-btn">&times;</button>
+    </div>
+    <div id="panel-body"></div>
+  </div>
+
+  <div id="toast-stack"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "shadow-browser",
+  "productName": "Shadow",
+  "version": "0.1.0",
+  "description": "A privacy browser with a built-in SOC analyst, firewall, and download sandbox.",
+  "main": "src/main/main.js",
+  "license": "MIT",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "electron .",
+    "scan": "node tools/scan-cli.js",
+    "test": "node --test test/*.test.js",
+    "update-lists": "node tools/update-blocklists.js"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0"
+  },
+  "dependencies": {}
+}
