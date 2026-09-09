@@ -26,12 +26,12 @@ const { Detonator } = require('./sandbox/detonate');
 const { TorManager } = require('./tor');
 const { hardenSession, webPreferences, commandLineSwitches } = require('./hardening/profile');
 const { shieldSource } = require('./hardening/fingerprint-shield');
-const { isNavigable, assertNavigable } = require('./hardening/url-policy');
+const { isNavigable, assertNavigable, isInternalAsset } = require('./hardening/url-policy');
 const { registerIpc } = require('./ipc');
 
 const SHADOW_HOME = path.join(os.homedir(), '.shadow');
-const CHROME_HEIGHT = 88;   // height of the browser toolbar in CSS pixels
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
+const CHROME_HEIGHT = 88;   // height of the browser toolbar in CSS pixels
 
 // ---------------------------------------------------------------------------
 // Core services
@@ -40,7 +40,10 @@ const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 const settings = new SettingsStore({ file: path.join(SHADOW_HOME, 'settings.json') });
 const events = new EventLog({ file: path.join(SHADOW_HOME, 'soc-events.jsonl'), settings });
 const blocklists = new Blocklists({ dir: path.join(__dirname, '..', '..', 'config', 'lists'), settings }).load();
-const firewall = new Firewall({ settings, blocklists, events });
+const firewall = new Firewall({
+  settings, blocklists, events,
+  isInternalAsset: (url) => isInternalAsset(url, RENDERER_DIR),
+});
 const analyzer = new Analyzer({ blocklists, settings, events });
 const detonator = new Detonator({ settings, events });
 const quarantine = new Quarantine({

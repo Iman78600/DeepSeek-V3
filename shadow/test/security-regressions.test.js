@@ -284,3 +284,51 @@ test('the validator lookup does not resolve inherited properties', () => {
     'an inherited key must not throw an internal error; the store rejects it by name');
   assert.doesNotThrow(() => validateSetting('__proto__', {}));
 });
+
+// ---------------------------------------------------------------------------
+// Shadow's own UI is served from file://, and the file-scheme hardening added
+// during the audit blocked its stylesheet and script as "file subresources".
+// The block page still appeared, but rendered its static defaults: a score of
+// 0 and no findings. A block page that cannot say why it blocked has failed at
+// the only job it has.
+// ---------------------------------------------------------------------------
+test("the firewall does not block Shadow's own page assets", () => {
+  const { decideRequest, parseRequest } = require('../src/main/firewall/firewall');
+  const { isInternalAsset } = require('../src/main/hardening/url-policy');
+  const rendererDir = path.join(__dirname, '..', 'src', 'renderer');
+
+  const settings = { get: (k) => ({ 'firewall.blockPrivateNetwork': true, 'firewall.httpsOnly': true }[k]) };
+  const config = {
+    settings,
+    rules: [],
+    isInternalAsset: (u) => isInternalAsset(u, rendererDir),
+  };
+
+  for (const asset of ['interstitial.js', 'styles.css', 'app.js']) {
+    const url = `file://${path.join(rendererDir, asset)}`;
+    const decision = decideRequest(parseRequest({ url, resourceType: 'script' }), config);
+    assert.equal(decision.action, 'allow', `${asset} must load: ${decision.detail || decision.reason}`);
+  }
+
+  // Everything outside that directory is still refused.
+  for (const outside of ['file:///etc/passwd', `file://${path.join(rendererDir, '..', '..', 'package.json')}`]) {
+    const decision = decideRequest(parseRequest({ url: outside, resourceType: 'script' }), config);
+    assert.equal(decision.action, 'block', `${outside} must stay blocked`);
+  }
+
+  // And a web page still cannot send a tab to a local file.
+  const nav = decideRequest(
+    parseRequest({ url: 'file:///etc/passwd', resourceType: 'mainFrame', referrer: 'https://evil.tk/' }),
+    config);
+  assert.equal(nav.action, 'block');
+});
+
+test('isInternalAsset resolves paths rather than trusting how they are spelled', () => {
+  const { isInternalAsset } = require('../src/main/hardening/url-policy');
+  const rendererDir = path.join(__dirname, '..', 'src', 'renderer');
+
+  assert.equal(isInternalAsset(`file://${path.join(rendererDir, 'app.js')}`, rendererDir), true);
+  assert.equal(isInternalAsset(`file://${rendererDir}/../../../etc/passwd`, rendererDir), false);
+  assert.equal(isInternalAsset('file:///tmp/renderer/app.js', rendererDir), false);
+  assert.equal(isInternalAsset('https://example.com/app.js', rendererDir), false);
+});

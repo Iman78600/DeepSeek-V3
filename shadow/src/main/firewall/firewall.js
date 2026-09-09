@@ -70,6 +70,18 @@ function decideRequest(req, config = {}) {
       detail: `Shadow does not allow the "${req.scheme}:" protocol. External handlers are a common way to launch local programs from a web page.` };
   }
   if (req.scheme === 'file') {
+    // Shadow's own UI is served from file:// and loads its own script and
+    // stylesheet. Blocking those as "file subresources" leaves the block page
+    // rendered but mute: it says a page was blocked and cannot say why, which
+    // is the one thing it exists to do.
+    //
+    // This is not a second trust decision. The protocol handler in main.js
+    // already refuses to serve any file outside the renderer directory, so
+    // this only declines to block what that handler would allow.
+    if (typeof config.isInternalAsset === 'function' && config.isInternalAsset(req.url)) {
+      return { action: 'allow', reason: 'internal-asset' };
+    }
+
     // Subresources never, and top-level only when it did not come from a web
     // page. Shadow's own interstitial and home pages are file:// URLs that
     // expose a small IPC bridge, so a page that can navigate to file:// can
@@ -228,10 +240,12 @@ function hardenRequestHeaders(details, config = {}) {
 }
 
 class Firewall {
-  constructor({ settings, blocklists, events } = {}) {
+  constructor({ settings, blocklists, events, isInternalAsset } = {}) {
     this.settings = settings;
     this.blocklists = blocklists;
     this.events = events;
+    /** Recognises Shadow's own UI files so the firewall does not block them. */
+    this.isInternalAsset = isInternalAsset || (() => false);
     this.rules = [];
     this.stats = { seen: 0, blocked: 0, upgraded: 0, byCategory: {} };
     this.recentBlocks = [];
@@ -286,6 +300,7 @@ class Firewall {
       blocklists: this.blocklists,
       rules: this.rules,
       wasUserNavigation: (url) => this.wasUserNavigation(url),
+      isInternalAsset: (url) => this.isInternalAsset(url),
     });
 
     if (decision.action === 'block') {

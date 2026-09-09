@@ -44,6 +44,26 @@ function parse(raw) {
 }
 
 /**
+ * True for any file inside Shadow's own renderer directory: the pages and the
+ * stylesheet and script they load. Resolves the path first, so a traversal
+ * that lands outside the directory is not internal however it is spelled.
+ */
+function isInternalAsset(raw, rendererDir) {
+  if (!rendererDir) return false;
+  let u;
+  try { u = new URL(String(raw)); } catch { return false; }
+  if (u.protocol !== 'file:') return false;
+
+  let filePath;
+  try { filePath = decodeURIComponent(u.pathname); } catch { return false; }
+  if (process.platform === 'win32' && /^\/[a-z]:/i.test(filePath)) filePath = filePath.slice(1);
+
+  const resolved = path.resolve(filePath);
+  const base = path.resolve(rendererDir);
+  return resolved === base || resolved.startsWith(base + path.sep);
+}
+
+/**
  * True only for Shadow's own bundled pages, identified by real filesystem
  * position rather than by how the path is spelled. Prevents a crafted
  * `file:///tmp/evil/interstitial.html` from being treated as internal.
@@ -109,6 +129,6 @@ function assertSafeExternal(raw) {
 
 module.exports = {
   isNavigable, assertNavigable, isSafeExternal, assertSafeExternal,
-  isInternalPage, UrlPolicyError,
+  isInternalPage, isInternalAsset, UrlPolicyError,
   NAVIGABLE_SCHEMES, EXTERNAL_SCHEMES, ALWAYS_FORBIDDEN,
 };

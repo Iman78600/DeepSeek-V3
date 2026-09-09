@@ -114,12 +114,24 @@ app.whenReady().then(async () => {
     `tab ended on ${path.basename(landedOn.split('?')[0])}`);
 
   if (showedInterstitial) {
+    // Not just "did the page appear". A block page that renders its static
+    // defaults, with a score of 0 and no findings, has failed at the one job
+    // it has. That is exactly what happened when the firewall was blocking
+    // the page's own script as a file:// subresource.
     const headline = await tabView.webContents
       .executeJavaScript('document.getElementById("headline").textContent', true).catch(() => null);
     const score = await tabView.webContents
       .executeJavaScript('document.getElementById("score").textContent', true).catch(() => null);
-    record('the block page explains itself', Boolean(headline && score),
-      `"${headline}" score ${score}`);
+    const findings = await tabView.webContents
+      .executeJavaScript('document.getElementById("findings").children.length', true).catch(() => 0);
+    const firstFinding = await tabView.webContents
+      .executeJavaScript('(document.querySelector("#findings h3")||{}).textContent||""', true).catch(() => '');
+
+    record('the block page loaded its own script', Number(score) > 0,
+      `score rendered as ${score}`);
+    record('the block page lists why it blocked', Number(findings) > 0,
+      `${findings} finding(s), first: "${String(firstFinding).slice(0, 60)}"`);
+    record('the block page has a headline', Boolean(headline), String(headline));
   }
 
   // --- 3. The firewall drops trackers and miners ---------------------------
